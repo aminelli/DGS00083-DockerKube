@@ -1,0 +1,5 @@
+@echo off
+
+ docker build -t debian_custom_prod:Ver_2.0 .
+
+ 
