@@ -15,8 +15,25 @@ spec:
       labels:
         app: nginx
     spec:
+      subdomain: "corsodom"
       containers:
       - name: nginx
         image: nginx:latest
         ports:
         - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+  namespace: corso
+spec:
+  selector:
+    app: nginx 
+  ports:
+  - name: nginx-service-port
+    protocol: TCP
+    port: 80
+    targetPort: 80
+  type: NodePort
+   
