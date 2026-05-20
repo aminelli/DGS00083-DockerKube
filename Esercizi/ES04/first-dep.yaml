@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: corso2
+  labels:
+    env: dev
+    team: team-dev-apps
+  annotations:
+    owner: "tony"
