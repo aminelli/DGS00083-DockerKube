@@ -8,7 +8,7 @@ metadata:
   namespace: corso
   labels:
     app: spring-app
-    version: ${DEP_VERSION}
+    version: "2.0"
 spec:
   replicas: 3
   selector:
@@ -16,18 +16,18 @@ spec:
       app: spring-app
   strategy:
     type: RollingUpdate
-    roollingUpdate:
+    rollingUpdate:
       maxUnavailable: 1  # Max 1 pod non disponibile durante l'aggiornamento
       maxSurge: 1        # Max 1 pod extra durante l'aggiornamento
   template:
     metadata:
       labels:
         app: spring-app
-        version: ${DEP_VERSION}
+        version: "2.0"
     spec:
       containers:
         - name: spring-app
-          image: web_app_spring:${APP_VERSION}
+          image: web_app_spring:v2.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
