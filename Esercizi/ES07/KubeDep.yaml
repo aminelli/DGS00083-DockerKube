@@ -1,3 +1,6 @@
+# ========================================
+# Deployment per l'app Spring Boot
+# ========================================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,4 +8,100 @@ metadata:
   namespace: corso
   labels:
     app: spring-app
-    version: "2.0"
+    version: ${DEP_VERSION}
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: spring-app
+  strategy:
+    type: RollingUpdate
+    roollingUpdate:
+      maxUnavailable: 1  # Max 1 pod non disponibile durante l'aggiornamento
+      maxSurge: 1        # Max 1 pod extra durante l'aggiornamento
+  template:
+    metadata:
+      labels:
+        app: spring-app
+        version: ${DEP_VERSION}
+    spec:
+      containers:
+        - name: spring-app
+          image: web_app_spring:${APP_VERSION}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          # Variabili ambiente
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+            - name: JAVA_OPTS
+              value: "-Xms512m -Xmx1024m"
+          
+          # Limiti risorse
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1024Mi"
+              cpu: "1000m"
+          
+          # Probe di avvio 
+          # attende che Spring sia pronto
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 5
+            failureThreshold: 5
+            periodSeconds: 5
+
+          # Probe di vivibilità 
+          # verifica che l'app sia viva; nel caso sia bloccata riavvia il pod
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 60
+            failureThreshold: 3
+            periodSeconds: 15
+
+          # Verifica che l'app sia pronta a ricevere traffico; 
+          # se non pronta, il pod viene escluso dal servizio
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 10
+            failureThreshold: 3
+            periodSeconds: 15
+
+      # Terminazione graceful: 
+      # così garantiamo che springboot abbia il tempo 
+      # di chiudere le connessioni e liberare risorse
+      terminationGracePeriodSeconds: 30
+
+---
+# ========================================
+# Service per esporre l'app Spring Boot
+# ========================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: spring-app-service
+  namespace: corso
+  labels:
+    app: spring-app
+spec:
+  type: NodePort
+  selector:
+    # Collega il service ai pod con label app: spring-app
+    app: spring-app
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80          # Porta del service  (interna al cluster)
+      targetPort: 8080  # Porta dei container che ospitano in replica l'app Spring Boot
+      nodePort: 30080   # Porta esposta sui nodi del cluster (per accesso esterno) (range 30000-32767)
