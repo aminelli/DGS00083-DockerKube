@@ -19,4 +19,16 @@ docker run -d --name webapp --hostname webapp -p 8080:8080 web_app_spring:v2.0
 # Rilascio in kubernetes
 kubectl apply -f KubeDep.yaml
 
+
+
+
+```
+
+
+```sh
+docker run -it --rm --network kind ubuntu /bin/bash
+
+apt-get install -y iputils-ping net-tools curl wget
+
+
 ```
