@@ -1,0 +1,115 @@
+# Scenario 02 — concurrencyPolicy
+# Tre CronJob identici che differiscono SOLO per concurrencyPolicy.
+# Il job dura ~70s per garantire sovrapposizioni tra esecuzioni consecutive.
+#
+# Allow   → esecuzioni parallele (default): possono accumularsi
+# Forbid  → salta se già in corso: nessuna sovrapposizione
+# Replace → cancella quella attiva e avvia la nuova
+---
+# 02a — Allow: ogni nuovo trigger avvia un job anche se uno è già in corso
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: concurrency-allow
+  namespace: corso
+  labels:
+    scenario: cronjob-concurrency
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Allow
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 300
+      template:
+        metadata:
+          labels:
+            app: concurrency-allow
+            scenario: cronjob-concurrency
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: worker
+              image: busybox:1.36
+              command: ["sh", "-c"]
+              args:
+                - |
+                  echo "[ALLOW] Start: $(date -u '+%H:%M:%S') - $HOSTNAME"
+                  sleep 70
+                  echo "[ALLOW] End:   $(date -u '+%H:%M:%S') - $HOSTNAME"
+              resources:
+                requests: { cpu: 50m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 64Mi }
+---
+# 02b — Forbid: se un job è ancora in corso, il trigger viene saltato
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: concurrency-forbid
+  namespace: corso
+  labels:
+    scenario: cronjob-concurrency
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 300
+      template:
+        metadata:
+          labels:
+            app: concurrency-forbid
+            scenario: cronjob-concurrency
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: worker
+              image: busybox:1.36
+              command: ["sh", "-c"]
+              args:
+                - |
+                  echo "[FORBID] Start: $(date -u '+%H:%M:%S') - $HOSTNAME"
+                  sleep 70
+                  echo "[FORBID] End:   $(date -u '+%H:%M:%S') - $HOSTNAME"
+              resources:
+                requests: { cpu: 50m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 64Mi }
+---
+# 02c — Replace: cancella il job attivo e avvia il nuovo
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: concurrency-replace
+  namespace: corso
+  labels:
+    scenario: cronjob-concurrency
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Replace
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 300
+      template:
+        metadata:
+          labels:
+            app: concurrency-replace
+            scenario: cronjob-concurrency
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: worker
+              image: busybox:1.36
+              command: ["sh", "-c"]
+              args:
+                - |
+                  echo "[REPLACE] Start: $(date -u '+%H:%M:%S') - $HOSTNAME"
+                  sleep 70
+                  echo "[REPLACE] End:   $(date -u '+%H:%M:%S') - $HOSTNAME"
+              resources:
+                requests: { cpu: 50m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 64Mi }

@@ -1,0 +1,228 @@
+# Scenario 05 — Access Modes
+# Dimostra i diversi Access Mode e i loro limiti:
+#   RWO  (ReadWriteOnce)    — 1 nodo in R/W: il più comune, usato da DB, etc.
+#   ROX  (ReadOnlyMany)     — N nodi in sola lettura: dati statici condivisi
+#   RWOP (ReadWriteOncePod) — 1 solo pod in R/W (k8s >= 1.22, garantisce unicità)
+#
+# NB: RWX (ReadWriteMany) richiede NFS/CephFS/GlusterFS, non disponibile
+# con hostPath su Kind single-node. Viene documentato ma non dimostrato.
+---
+# PV con RWO (ReadWriteOnce)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: access-rwo-pv
+  labels:
+    scenario: pv-access
+    mode: rwo
+spec:
+  storageClassName: access-demo
+  capacity:
+    storage: 100Mi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /tmp/k8s-pv-rwo
+    type: DirectoryOrCreate
+---
+# PV con ROX (ReadOnlyMany) — simulato con hostPath
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: access-rox-pv
+  labels:
+    scenario: pv-access
+    mode: rox
+spec:
+  storageClassName: access-demo
+  capacity:
+    storage: 100Mi
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /tmp/k8s-pv-rox
+    type: DirectoryOrCreate
+---
+# PV con RWOP (ReadWriteOncePod, k8s >= 1.22)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: access-rwop-pv
+  labels:
+    scenario: pv-access
+    mode: rwop
+spec:
+  storageClassName: access-demo
+  capacity:
+    storage: 100Mi
+  accessModes:
+    - ReadWriteOncePod
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /tmp/k8s-pv-rwop
+    type: DirectoryOrCreate
+---
+# PVC RWO
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: access-rwo-pvc
+  namespace: default
+  labels:
+    scenario: pv-access
+spec:
+  storageClassName: access-demo
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Mi
+  volumeName: access-rwo-pv
+---
+# PVC ROX
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: access-rox-pvc
+  namespace: default
+  labels:
+    scenario: pv-access
+spec:
+  storageClassName: access-demo
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 50Mi
+  volumeName: access-rox-pv
+---
+# PVC RWOP
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: access-rwop-pvc
+  namespace: default
+  labels:
+    scenario: pv-access
+spec:
+  storageClassName: access-demo
+  accessModes:
+    - ReadWriteOncePod
+  resources:
+    requests:
+      storage: 50Mi
+  volumeName: access-rwop-pv
+---
+# Pod scrittore RWO
+apiVersion: v1
+kind: Pod
+metadata:
+  name: access-rwo-writer
+  namespace: default
+  labels:
+    app: access-rwo-writer
+    scenario: pv-access
+spec:
+  restartPolicy: Never
+  containers:
+    - name: writer
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "[RWO] Scrivo su ReadWriteOnce..."
+          echo "Scritto da $HOSTNAME il $(date)" > /data/rwo.txt
+          cat /data/rwo.txt
+          sleep 3600
+      volumeMounts:
+        - name: rwo-vol
+          mountPath: /data
+      resources:
+        requests: { cpu: 50m, memory: 32Mi }
+        limits:   { cpu: 100m, memory: 64Mi }
+  volumes:
+    - name: rwo-vol
+      persistentVolumeClaim:
+        claimName: access-rwo-pvc
+---
+# Pod che usa ROX (read-only)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: access-rox-reader-1
+  namespace: default
+  labels:
+    app: access-rox-reader
+    instance: "1"
+    scenario: pv-access
+spec:
+  restartPolicy: Never
+  initContainers:
+    # Prima scriviamo dati nel PV (in scrittura diretta su hostPath del nodo)
+    - name: init-write
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "Dati condivisi ROX: $(date)" > /data/shared.txt
+          echo "Scritti da initContainer"    >> /data/shared.txt
+      volumeMounts:
+        - name: rox-vol
+          mountPath: /data
+  containers:
+    - name: reader
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "[ROX reader-1] Leggo da ReadOnlyMany..."
+          cat /data/shared.txt
+          sleep 3600
+      volumeMounts:
+        - name: rox-vol
+          mountPath: /data
+          readOnly: true     # ROX: il container dichiara readOnly
+      resources:
+        requests: { cpu: 50m, memory: 32Mi }
+        limits:   { cpu: 100m, memory: 64Mi }
+  volumes:
+    - name: rox-vol
+      persistentVolumeClaim:
+        claimName: access-rox-pvc
+        readOnly: true       # ROX: il PVC viene montato in sola lettura
+---
+# Secondo pod che legge lo stesso ROX PVC (contemporaneamente)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: access-rox-reader-2
+  namespace: default
+  labels:
+    app: access-rox-reader
+    instance: "2"
+    scenario: pv-access
+spec:
+  restartPolicy: Never
+  containers:
+    - name: reader
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "[ROX reader-2] Leggo dallo stesso PVC in sola lettura..."
+          cat /data/shared.txt 2>/dev/null || echo "(file non ancora scritto)"
+          sleep 3600
+      volumeMounts:
+        - name: rox-vol
+          mountPath: /data
+          readOnly: true
+      resources:
+        requests: { cpu: 50m, memory: 32Mi }
+        limits:   { cpu: 100m, memory: 64Mi }
+  volumes:
+    - name: rox-vol
+      persistentVolumeClaim:
+        claimName: access-rox-pvc
+        readOnly: true

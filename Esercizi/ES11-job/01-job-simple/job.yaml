@@ -1,0 +1,57 @@
+# ─────────────────────────────────────────────────────────────
+# JOB SEMPLICE (one-shot)
+# ─────────────────────────────────────────────────────────────
+# DESCRIZIONE:
+#   Un singolo Pod viene creato, esegue il suo lavoro fino al termine
+#   e il Job viene marcato come Completed.
+#   In caso di errore viene ritentato fino a backoffLimit volte.
+#
+# CAMPI CHIAVE:
+#   restartPolicy: Never     → il Pod NON viene riavviato in loco;
+#                              Kubernetes ne crea uno nuovo per ogni retry
+#   backoffLimit: 3          → massimo 3 tentativi prima di fallire
+#   ttlSecondsAfterFinished  → il Job (e i suoi Pod) viene eliminato
+#                              automaticamente dopo N secondi dal completamento
+# ─────────────────────────────────────────────────────────────
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job-simple
+  namespace: corso
+  labels:
+    scenario: job-simple
+spec:
+  ttlSecondsAfterFinished: 300   # auto-cleanup dopo 5 minuti
+  backoffLimit: 3                # max tentativi in caso di fallimento
+  template:
+    metadata:
+      labels:
+        scenario: job-simple
+    spec:
+      restartPolicy: Never       # Never | OnFailure
+      containers:
+        - name: worker
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "========================================"
+              echo " Job one-shot avviato"
+              echo " Timestamp: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+              echo " Hostname pod: $HOSTNAME"
+              echo "========================================"
+              echo ""
+              echo "Simulazione elaborazione batch..."
+              for i in $(seq 1 5); do
+                echo "  [step $i/5] elaborazione record $((i * 100))..."
+                sleep 1
+              done
+              echo ""
+              echo "Elaborazione completata con successo."
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi

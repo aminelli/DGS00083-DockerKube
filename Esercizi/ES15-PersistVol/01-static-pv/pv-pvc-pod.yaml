@@ -1,0 +1,110 @@
+# Scenario 01 — Static Provisioning
+# Flusso manuale (pre-dynamic provisioning):
+#   1. L'amministratore crea un PersistentVolume (PV) che rappresenta lo storage fisico
+#   2. Lo sviluppatore crea un PersistentVolumeClaim (PVC) che richiede storage
+#   3. Kubernetes abbina (binding) il PVC al PV compatibile
+#   4. Il Pod usa il PVC tramite volumes[].persistentVolumeClaim
+#
+# In Kind usiamo hostPath per simulare un disco fisico reale.
+---
+# Passo 1 — PersistentVolume (risorsa cluster-scoped, non ha namespace)
+# Rappresenta lo storage fisico: NFS, iSCSI, cloud disk, hostPath, ecc.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: static-pv-large
+  namespace: corso
+  labels:
+    tier: gold          # label usata dal PVC selector (scenario 02)
+    env: lab
+spec:
+  storageClassName: manual          # deve coincidere con il PVC per il binding
+  capacity:
+    storage: 500Mi
+  accessModes:
+    - ReadWriteOnce                 # questo PV supporta RWO
+  persistentVolumeReclaimPolicy: Retain   # dopo il release del PVC, i dati restano
+  hostPath:
+    path: /tmp/k8s-pv-static-large
+    type: DirectoryOrCreate
+---
+# Un secondo PV più piccolo (stesso storageClass)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: static-pv-small
+  labels:
+    tier: silver
+    env: lab
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 100Mi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /tmp/k8s-pv-static-small
+    type: DirectoryOrCreate
+---
+# Passo 2 — PersistentVolumeClaim (risorsa namespace-scoped)
+# Lo sviluppatore dichiara QUANTA storage serve e CON QUALI caratteristiche.
+# Kubernetes cerca un PV compatibile (storageClass + accessMode + capacity).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: static-pvc
+  namespace: default
+  labels:
+    scenario: pv-static
+spec:
+  storageClassName: manual          # seleziona solo PV con storageClass: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 200Mi                # chiede 200Mi → si lega al PV da 500Mi (il più piccolo sufficiente)
+  # NON specifica volumeName → Kubernetes sceglie automaticamente
+---
+# Passo 3 — Pod che usa il PVC
+apiVersion: v1
+kind: Pod
+metadata:
+  name: static-pv-writer
+  namespace: default
+  labels:
+    app: static-pv-writer
+    scenario: pv-static
+spec:
+  restartPolicy: Never
+  containers:
+    - name: writer
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "=== Static PV + PVC ==="
+          echo ""
+          echo "Scrivo dati persistenti su /data (montato da PVC → PV)..."
+          mkdir -p /data
+          echo "Sessione: $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> /data/sessions.log
+          echo "Pod:      $HOSTNAME"                          >> /data/sessions.log
+          echo ""
+          echo "Contenuto /data/:"
+          ls -la /data/
+          echo ""
+          cat /data/sessions.log
+          echo ""
+          echo "Spazio sul volume:"
+          df -h /data
+      volumeMounts:
+        - name: persistent-storage
+          mountPath: /data
+      resources:
+        requests: { cpu: 50m, memory: 32Mi }
+        limits:   { cpu: 100m, memory: 64Mi }
+
+  volumes:
+    - name: persistent-storage
+      persistentVolumeClaim:
+        claimName: static-pvc       # riferimento al PVC (NON al PV direttamente)

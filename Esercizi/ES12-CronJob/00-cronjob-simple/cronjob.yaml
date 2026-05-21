@@ -1,0 +1,72 @@
+# ─────────────────────────────────────────────────────────────
+# CRONJOB SEMPLICE
+# ─────────────────────────────────────────────────────────────
+# DESCRIZIONE:
+#   Esegue un Job secondo uno schedule cron.
+#   Caso d'uso tipico: report giornaliero, cleanup notturno,
+#   health check periodico, invio email/notifiche.
+#
+# SINTASSI SCHEDULE (standard cron a 5 campi):
+#   ┌─────────── minuto      (0-59)
+#   │ ┌───────── ora         (0-23)
+#   │ │ ┌─────── giorno mese (1-31)
+#   │ │ │ ┌───── mese        (1-12)
+#   │ │ │ │ ┌─── giorno sett.(0-6, 0=domenica)
+#   │ │ │ │ │
+#   * * * * *
+#
+# ESEMPI SCHEDULE:
+#   "*/1 * * * *"    → ogni minuto
+#   "0 * * * *"      → ogni ora (al minuto 0)
+#   "0 2 * * *"      → ogni giorno alle 02:00
+#   "0 2 * * 0"      → ogni domenica alle 02:00
+#   "0 9 1 * *"      → il primo giorno di ogni mese alle 09:00
+#   "@daily"         → alias per "0 0 * * *"
+#   "@hourly"        → alias per "0 * * * *"
+# ─────────────────────────────────────────────────────────────
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cronjob-simple
+  namespace: corso
+  labels:
+    scenario: cronjob-simple
+spec:
+  schedule: "*/2 * * * *"          # ogni 2 minuti
+  timeZone: "Europe/Rome"          # timezone (Kubernetes >= 1.27)
+  successfulJobsHistoryLimit: 3    # mantieni log degli ultimi 3 job ok
+  failedJobsHistoryLimit: 1        # mantieni log dell'ultimo job fallito
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            scenario: cronjob-simple
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: reporter
+              image: busybox:1.36
+              command: ["sh", "-c"]
+              args:
+                - |
+                  echo "========================================"
+                  echo " Report periodico"
+                  echo " Esecuzione: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+                  echo " Pod: $HOSTNAME"
+                  echo "========================================"
+                  echo "Raccolta metriche applicazione..."
+                  sleep 2
+                  echo "Statistiche generate:"
+                  echo "  - Richieste ultimo periodo: $((RANDOM % 10000 + 1000))"
+                  echo "  - Errori: $((RANDOM % 50))"
+                  echo "  - Latenza media: $((RANDOM % 200 + 50))ms"
+                  echo "Report inviato con successo."
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi

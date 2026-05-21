@@ -1,0 +1,122 @@
+# Scenario 04 — ReclaimPolicy: Retain vs Delete
+# Dimostra cosa succede ai dati quando un PVC viene eliminato:
+#   Retain → il PV passa a Released, i dati restano (richiede intervento manuale)
+#   Delete → il PV e il suo storage vengono eliminati automaticamente
+---
+# PV con reclaimPolicy: Retain
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: reclaim-retain-pv
+  labels:
+    scenario: pv-reclaim
+    policy: retain
+spec:
+  storageClassName: reclaim-demo
+  capacity:
+    storage: 100Mi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain     # dati conservati dopo release
+  hostPath:
+    path: /tmp/k8s-pv-retain
+    type: DirectoryOrCreate
+---
+# PV con reclaimPolicy: Delete
+# (con hostPath il provisioner non elimina la dir; in cloud cloud sì)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: reclaim-delete-pv
+  labels:
+    scenario: pv-reclaim
+    policy: delete
+spec:
+  storageClassName: reclaim-demo
+  capacity:
+    storage: 100Mi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete     # PV eliminato automaticamente alla release
+  hostPath:
+    path: /tmp/k8s-pv-delete
+    type: DirectoryOrCreate
+---
+# PVC per il PV Retain
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: reclaim-retain-pvc
+  namespace: default
+  labels:
+    scenario: pv-reclaim
+spec:
+  storageClassName: reclaim-demo
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Mi
+  volumeName: reclaim-retain-pv     # binding diretto al PV Retain
+---
+# PVC per il PV Delete
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: reclaim-delete-pvc
+  namespace: default
+  labels:
+    scenario: pv-reclaim
+spec:
+  storageClassName: reclaim-demo
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Mi
+  volumeName: reclaim-delete-pv     # binding diretto al PV Delete
+---
+# Pod che scrive dati su entrambi i PVC
+apiVersion: v1
+kind: Pod
+metadata:
+  name: reclaim-writer
+  namespace: default
+  labels:
+    app: reclaim-writer
+    scenario: pv-reclaim
+spec:
+  restartPolicy: Never
+  containers:
+    - name: writer
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "Scrivo dati su entrambi i volumi..."
+          echo "DATO RETAIN: scritto il $(date)" > /data-retain/important.txt
+          echo "DATO DELETE: scritto il $(date)" > /data-delete/temp.txt
+          echo ""
+          echo "/data-retain/:"
+          ls -la /data-retain/
+          echo ""
+          echo "/data-delete/:"
+          ls -la /data-delete/
+          echo ""
+          echo "Completato. Ora elimina i PVC per vedere il comportamento."
+      volumeMounts:
+        - name: vol-retain
+          mountPath: /data-retain
+        - name: vol-delete
+          mountPath: /data-delete
+      resources:
+        requests: { cpu: 50m, memory: 32Mi }
+        limits:   { cpu: 100m, memory: 64Mi }
+
+  volumes:
+    - name: vol-retain
+      persistentVolumeClaim:
+        claimName: reclaim-retain-pvc
+    - name: vol-delete
+      persistentVolumeClaim:
+        claimName: reclaim-delete-pvc

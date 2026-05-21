@@ -1,0 +1,94 @@
+# Scenario 05 — initContainer + emptyDir
+# Pattern comune: un initContainer prepara un volume (scarica config,
+# clona un repo, genera file) e il container principale lo consuma.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: init-volume-demo
+  namespace: default
+  labels:
+    app: init-volume-demo
+    scenario: volume-init
+spec:
+  restartPolicy: Never
+
+  # Gli initContainer vengono eseguiti in sequenza prima dei container principali.
+  # Condividono lo stesso volume emptyDir con il container principale.
+  initContainers:
+    - name: config-generator
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "[init-1] Generazione configurazione dinamica..."
+          mkdir -p /init-data/config /init-data/certs
+
+          # Simula generazione di un config file dinamico
+          cat > /init-data/config/app.conf << EOF
+          [server]
+          host=0.0.0.0
+          port=8080
+          generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          environment=kind-lab
+
+          [database]
+          host=postgres-svc
+          port=5432
+          pool_size=5
+          EOF
+
+          echo "[init-1] app.conf generato."
+
+          # Simula download di un asset
+          echo "PLACEHOLDER_ASSET_v1.2.3" > /init-data/assets/bundle.js
+          echo "[init-1] Completato."
+          ls -la /init-data/
+      volumeMounts:
+        - name: init-vol
+          mountPath: /init-data
+
+    - name: permission-fixer
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "[init-2] Aggiustamento permessi..."
+          chmod -R 755 /init-data/
+          chown -R 1000:1000 /init-data/ 2>/dev/null || true
+          echo "[init-2] Struttura finale:"
+          find /init-data -type f | sort
+          echo "[init-2] Completato."
+      volumeMounts:
+        - name: init-vol
+          mountPath: /init-data
+
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "[app] Avvio container principale."
+          echo "[app] Il volume /app-data/ è stato preparato dagli initContainer."
+          echo ""
+          echo "==> Struttura /app-data/:"
+          find /app-data -type f | sort
+          echo ""
+          echo "==> Contenuto app.conf:"
+          cat /app-data/config/app.conf
+          echo ""
+          echo "==> Asset presente:"
+          ls -la /app-data/assets/
+          echo ""
+          echo "[app] Applicazione in esecuzione... (sleep)"
+          sleep 3600
+      volumeMounts:
+        - name: init-vol
+          mountPath: /app-data   # stesso volume, mountPath diverso
+      resources:
+        requests: { cpu: 50m, memory: 32Mi }
+        limits:   { cpu: 100m, memory: 64Mi }
+
+  volumes:
+    - name: init-vol
+      emptyDir: {}

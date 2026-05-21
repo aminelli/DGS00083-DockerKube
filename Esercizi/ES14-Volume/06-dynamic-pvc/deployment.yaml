@@ -1,0 +1,91 @@
+# Scenario 06 — StorageClass + Dynamic Provisioning
+# Il provisioner standard-rwo di Kind crea automaticamente i PV
+# quando un PVC viene richiesto.
+# Mostra anche: Deployment con PVC, ReadWriteMany con hostPath.
+
+# Verifica le StorageClass disponibili nel cluster:
+#   kubectl get storageclass
+# Kind ha di default: 'standard' (hostpath provisioner)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dynamic-pvc
+  namespace: default
+  labels:
+    scenario: volume-dynamic
+  annotations:
+    # Forza la creazione immediata del PV (senza aspettare un pod)
+    volume.kubernetes.io/selected-node: ""
+spec:
+  # Usa la StorageClass di default di Kind
+  # storageClassName: standard  (omettere = usa quella di default)
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynamic-pvc-app
+  namespace: default
+  labels:
+    app: dynamic-pvc-app
+    scenario: volume-dynamic
+spec:
+  replicas: 1        # RWO: solo 1 replica può scrivere su questo volume
+  selector:
+    matchLabels:
+      app: dynamic-pvc-app
+  template:
+    metadata:
+      labels:
+        app: dynamic-pvc-app
+        scenario: volume-dynamic
+    spec:
+      containers:
+        - name: app
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/nginx/html/data
+          command: ["sh", "-c"]
+          args:
+            - |
+              # Crea una pagina che si aggiorna a ogni riavvio
+              mkdir -p /usr/share/nginx/html/data
+              BOOT=$(($(cat /usr/share/nginx/html/data/boots.txt 2>/dev/null || echo 0) + 1))
+              echo $BOOT > /usr/share/nginx/html/data/boots.txt
+              cat > /usr/share/nginx/html/index.html << EOF
+              <h1>Dynamic PVC Demo</h1>
+              <p>Boots: $BOOT</p>
+              <p>Hostname: $HOSTNAME</p>
+              <p>Ora: $(date)</p>
+              EOF
+              echo "Boot numero $BOOT. Avvio nginx..."
+              nginx -g "daemon off;"
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits:   { cpu: 100m, memory: 64Mi }
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: dynamic-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dynamic-pvc-svc
+  namespace: default
+  labels:
+    scenario: volume-dynamic
+spec:
+  selector:
+    app: dynamic-pvc-app
+  ports:
+    - port: 80
+      targetPort: 80

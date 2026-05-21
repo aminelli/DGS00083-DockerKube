@@ -1,0 +1,108 @@
+# Scenario 03 — Dynamic Provisioning con StorageClass
+# Con il dynamic provisioning NON si crea il PV manualmente.
+# Il provisioner della StorageClass lo crea automaticamente.
+#
+# Kind include il provisioner 'rancher.io/local-path' (StorageClass: standard).
+# In produzione si usa: aws-ebs-csi, gce-pd-csi, azure-disk-csi, rook-ceph, ecc.
+#
+# FLUSSO:
+#   1. Admin crea la StorageClass (una volta sola)
+#   2. Sviluppatore crea il PVC (specifica storageClassName)
+#   3. Kubernetes invoca il provisioner → PV creato automaticamente
+#   4. PVC Bound → Pod può usarlo
+---
+# StorageClass A — usa il provisioner nativo di Kind (standard/rancher.io/local-path)
+# Questa è già presente in Kind; la ricreiamo per mostrare la struttura.
+# (se già esiste, kubectl apply aggiornerà solo le annotation)
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: kind-local-path
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"   # non renderla default
+provisioner: rancher.io/local-path       # provisioner integrato in Kind
+reclaimPolicy: Delete                    # PV eliminato quando il PVC viene eliminato
+volumeBindingMode: WaitForFirstConsumer  # crea il PV solo quando un pod lo richiede (node affinity)
+allowVolumeExpansion: true               # permette kubectl patch pvc per espandere
+---
+# PVC che usa la StorageClass kind-local-path → PV creato automaticamente
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dynamic-pvc-a
+  namespace: default
+  labels:
+    scenario: pv-dynamic
+spec:
+  storageClassName: kind-local-path
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 64Mi
+---
+# Un secondo PVC indipendente (ogni PVC ottiene il proprio PV)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dynamic-pvc-b
+  namespace: default
+  labels:
+    scenario: pv-dynamic
+spec:
+  storageClassName: kind-local-path
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 128Mi
+---
+# Deployment che usa dynamic-pvc-a
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynamic-app
+  namespace: default
+  labels:
+    app: dynamic-app
+    scenario: pv-dynamic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dynamic-app
+  template:
+    metadata:
+      labels:
+        app: dynamic-app
+        scenario: pv-dynamic
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "=== Dynamic PVC — boot counter persistente ==="
+              COUNTER_FILE=/data/boot_count.txt
+              COUNT=$(cat $COUNTER_FILE 2>/dev/null || echo 0)
+              COUNT=$((COUNT + 1))
+              echo $COUNT > $COUNTER_FILE
+              echo "Boot numero: $COUNT"
+              echo "Data:        $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> /data/boot_log.txt
+              echo "Hostname:    $HOSTNAME"                         >> /data/boot_log.txt
+              echo ""
+              echo "Storico boot:"
+              cat /data/boot_log.txt
+              sleep 3600
+          volumeMounts:
+            - name: app-data
+              mountPath: /data
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits:   { cpu: 100m, memory: 64Mi }
+
+      volumes:
+        - name: app-data
+          persistentVolumeClaim:
+            claimName: dynamic-pvc-a

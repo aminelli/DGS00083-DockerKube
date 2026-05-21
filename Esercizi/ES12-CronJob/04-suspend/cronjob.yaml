@@ -1,0 +1,45 @@
+# Scenario 04 — suspend
+# Un CronJob può essere messo in pausa (suspend: true) senza eliminarlo.
+# Le esecuzioni in corso NON vengono interrotte; solo quelle future vengono bloccate.
+# Utile per: maintenance, debug, rilasci controllati.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: suspend-demo
+  namespace: default
+  labels:
+    app: suspend-demo
+    scenario: cronjob-suspend
+spec:
+  schedule: "* * * * *"
+  # suspend: false → in esecuzione normale (default)
+  # suspend: true  → sospeso, non schedula nuovi job
+  suspend: false
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 2
+  startingDeadlineSeconds: 30
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 180
+      template:
+        metadata:
+          labels:
+            app: suspend-demo
+            scenario: cronjob-suspend
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: task
+              image: busybox:1.36
+              command: ["sh", "-c"]
+              args:
+                - |
+                  echo "================================================"
+                  echo " suspend-demo eseguito alle $(date -u '+%H:%M:%S')"
+                  echo " Se vedi questo, il CronJob NON è sospeso."
+                  echo "================================================"
+                  sleep 10
+              resources:
+                requests: { cpu: 50m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 64Mi }

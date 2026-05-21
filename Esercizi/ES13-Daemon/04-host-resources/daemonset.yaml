@@ -1,0 +1,115 @@
+# Scenario 04 — DaemonSet con accesso alle risorse del nodo host
+#
+# Gli agenti di monitoring e sicurezza spesso hanno bisogno di accedere
+# alle risorse del nodo (filesystem, rete, processi).
+#
+# Opzioni principali:
+#   hostNetwork: true  → usa la rete del nodo (stessa interfaccia, stesso IP)
+#   hostPID:    true   → accede ai processi del nodo (ps aux mostra tutti i proc)
+#   hostIPC:    true   → condivide la IPC namespace del nodo
+#   hostPath           → monta directory del filesystem del nodo
+#
+# SICUREZZA: queste opzioni richiedono privilegi elevati.
+# In produzione usare SecurityContext, PodSecurityAdmission, ecc.
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-monitor
+  namespace: default
+  labels:
+    app: node-monitor
+    scenario: ds-host-resources
+spec:
+  selector:
+    matchLabels:
+      app: node-monitor
+
+  template:
+    metadata:
+      labels:
+        app: node-monitor
+        scenario: ds-host-resources
+    spec:
+      terminationGracePeriodSeconds: 10
+
+      # Usa la rete del nodo host (utile per metriche di rete a basso livello)
+      hostNetwork: true
+      # NOTA: con hostNetwork: true, il pod usa l'IP del nodo (non un IP pod)
+      # e può aprire porte sul nodo direttamente.
+      dnsPolicy: ClusterFirstWithHostNet   # necessario quando hostNetwork=true
+
+      # Accesso ai processi del nodo (utile per Falco, sysdig, etc.)
+      hostPID: false   # disabilitato per sicurezza nel lab; metti true per demo
+
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+
+      containers:
+        - name: monitor
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "=== Node Monitor su: $NODE_NAME ==="
+              echo ""
+              echo "IP del pod (= IP del nodo perché hostNetwork=true):"
+              hostname -i
+              echo ""
+              echo "Interfacce di rete del NODO (non del container):"
+              ip addr show 2>/dev/null | grep -E "^[0-9]+:|inet " | head -20
+              echo ""
+              echo "Mount points del nodo visibili tramite hostPath:"
+              echo "  /host/proc/meminfo:"
+              cat /host/proc/meminfo | head -5
+              echo ""
+              echo "  /host/etc/os-release:"
+              cat /host/etc/os-release | head -5
+              echo ""
+              echo "  /host/var/log (primi 5 file):"
+              ls /host/var/log/ 2>/dev/null | head -5
+              sleep 3600
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            # Monta il /proc del nodo per metriche di sistema
+            - name: host-proc
+              mountPath: /host/proc
+              readOnly: true
+            # Monta /etc del nodo per info OS
+            - name: host-etc
+              mountPath: /host/etc
+              readOnly: true
+            # Monta /var/log del nodo per raccolta log
+            - name: host-logs
+              mountPath: /host/var/log
+              readOnly: true
+            # Monta un path custom per scrivere dati dell'agente sul nodo
+            - name: agent-data
+              mountPath: /agent-data
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits:   { cpu: 200m, memory: 128Mi }
+
+      volumes:
+        - name: host-proc
+          hostPath:
+            path: /proc
+            type: Directory
+        - name: host-etc
+          hostPath:
+            path: /etc
+            type: Directory
+        - name: host-logs
+          hostPath:
+            path: /var/log
+            type: Directory
+        - name: agent-data
+          hostPath:
+            path: /tmp/k8s-agent-data   # directory sul nodo per dati dell'agente
+            type: DirectoryOrCreate

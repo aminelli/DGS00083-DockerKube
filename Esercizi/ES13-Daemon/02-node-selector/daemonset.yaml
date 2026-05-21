@@ -1,0 +1,117 @@
+# Scenario 02 — DaemonSet con nodeSelector e nodeAffinity
+#
+# Per default un DaemonSet gira su TUTTI i nodi. Con selector/affinity
+# si può limitarlo a un SOTTOINSIEME di nodi.
+#
+# Metodi per selezionare i nodi:
+#   1. spec.template.spec.nodeSelector      — semplice, matcha esatto di label
+#   2. spec.template.spec.affinity          — più flessibile: matchExpressions, weight, ecc.
+#
+# Casi d'uso:
+#   - GPU monitoring: solo nodi con label gpu=true
+#   - SSD collector: solo nodi con disktype=ssd
+#   - Edge agent: solo nodi in una zona specifica
+---
+# Prima aggiungiamo la label ai nodi disponibili
+# (il test.ps1 etichetta i nodi prima di fare apply)
+
+# DaemonSet A — usa nodeSelector (metodo semplice)
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: selector-agent
+  namespace: default
+  labels:
+    app: selector-agent
+    scenario: ds-selector
+spec:
+  selector:
+    matchLabels:
+      app: selector-agent
+
+  template:
+    metadata:
+      labels:
+        app: selector-agent
+        scenario: ds-selector
+    spec:
+      terminationGracePeriodSeconds: 5
+
+      # Gira SOLO sui nodi con label: monitoring=enabled
+      nodeSelector:
+        # monitoring: enabled
+        env: prod
+        disktype: ssd
+
+
+      containers:
+        - name: agent
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "selector-agent su nodo: $NODE_NAME"
+              echo "Questo nodo ha label: monitoring=enabled"
+              sleep 3600
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            requests: { cpu: 25m, memory: 16Mi }
+            limits:   { cpu: 50m, memory: 32Mi }
+---
+# DaemonSet B — usa nodeAffinity (metodo flessibile)
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: affinity-agent
+  namespace: default
+  labels:
+    app: affinity-agent
+    scenario: ds-selector
+spec:
+  selector:
+    matchLabels:
+      app: affinity-agent
+
+  template:
+    metadata:
+      labels:
+        app: affinity-agent
+        scenario: ds-selector
+    spec:
+      terminationGracePeriodSeconds: 5
+
+      affinity:
+        nodeAffinity:
+          # requiredDuringSchedulingIgnoredDuringExecution = MUST
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  # Gira su nodi con tier=worker (esclude control-plane)
+                  - key: tier
+                    operator: In
+                    values: [worker, compute]
+                  # Escludi nodi in manutenzione
+                  - key: maintenance
+                    operator: DoesNotExist
+
+      containers:
+        - name: agent
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "affinity-agent su nodo: $NODE_NAME"
+              echo "Nodo ha tier=worker|compute e NON ha label maintenance"
+              sleep 3600
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            requests: { cpu: 25m, memory: 16Mi }
+            limits:   { cpu: 50m, memory: 32Mi }

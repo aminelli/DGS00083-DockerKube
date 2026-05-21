@@ -1,0 +1,92 @@
+# Scenario 01 — DaemonSet base
+#
+# Un DaemonSet garantisce che UN pod venga eseguito su OGNI nodo del cluster.
+# Quando un nuovo nodo entra nel cluster, il pod viene automaticamente schedulato.
+# Quando un nodo viene rimosso, il pod viene automaticamente eliminato.
+#
+# Casi d'uso tipici:
+#   - Agente di monitoring (Prometheus node-exporter, Datadog, etc.)
+#   - Raccolta log (Fluentd, Filebeat, Fluent Bit)
+#   - Plugin di rete (Calico, Flannel, Cilium)
+#   - Plugin di storage (Ceph, Longhorn agent)
+#   - Agente di sicurezza (Falco, Sysdig)
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-info
+  namespace: corso
+  labels:
+    app: node-info
+    scenario: ds-basic
+spec:
+  selector:
+    matchLabels:
+      app: node-info
+
+  # Strategia di update (default: RollingUpdate con maxUnavailable=1)
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+
+  template:
+    metadata:
+      labels:
+        app: node-info
+        scenario: ds-basic
+    spec:
+      # I DaemonSet spesso usano terminationGracePeriodSeconds breve
+      # per permettere un rollout/restart veloce
+      terminationGracePeriodSeconds: 10
+
+      containers:
+        - name: node-info
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "=== DaemonSet pod avviato sul nodo: $NODE_NAME ==="
+              echo "Pod:       $POD_NAME"
+              echo "Nodo:      $NODE_NAME"
+              echo "Namespace: $POD_NAMESPACE"
+              echo "IP nodo:   $NODE_IP"
+              echo "IP pod:    $POD_IP"
+              echo ""
+              echo "Info sistema del nodo:"
+              uname -a
+              echo ""
+              echo "CPU online:"
+              nproc
+              echo ""
+              echo "Memoria:"
+              free -m
+              # Loop per mantenere il pod in Running
+              while true; do
+                sleep 30
+                echo "$(date -u '+%H:%M:%S') ancora in esecuzione su $NODE_NAME"
+              done
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName     # nome del nodo su cui gira il pod
+            - name: NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP     # IP del nodo host
+          resources:
+            requests: { cpu: 25m, memory: 16Mi }
+            limits:   { cpu: 100m, memory: 64Mi }

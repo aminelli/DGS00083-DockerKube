@@ -1,0 +1,66 @@
+# Scenario 01 — emptyDir
+# Volume temporaneo creato quando il pod viene schedulato,
+# distrutto quando il pod termina.
+# I container nello stesso pod condividono lo stesso emptyDir.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: emptydir-demo
+  namespace: default
+  labels:
+    app: emptydir-demo
+    scenario: volume-emptydir
+spec:
+  restartPolicy: Never
+  # Due container condividono /shared
+  containers:
+    - name: writer
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "[writer] Avvio scrittura su /shared ogni 5s..."
+          i=1
+          while [ $i -le 6 ]; do
+            echo "messaggio-$i scritto da 'writer' alle $(date)" >> /shared/data.txt
+            echo "[writer] scritto messaggio-$i"
+            i=$((i+1))
+            sleep 5
+          done
+          echo "[writer] Fine. File creato:"
+          ls -lh /shared/
+      volumeMounts:
+        - name: shared-vol
+          mountPath: /shared
+      resources:
+        requests: { cpu: 50m, memory: 32Mi }
+        limits:   { cpu: 100m, memory: 64Mi }
+
+    - name: reader
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "[reader] Attendo che il writer crei /shared/data.txt..."
+          until [ -f /shared/data.txt ]; do sleep 2; done
+          echo "[reader] File trovato! Leggo in tempo reale (tail -f)..."
+          tail -f /shared/data.txt &
+          TAIL_PID=$!
+          sleep 35
+          kill $TAIL_PID 2>/dev/null
+          echo ""
+          echo "[reader] Contenuto finale:"
+          cat /shared/data.txt
+      volumeMounts:
+        - name: shared-vol
+          mountPath: /shared
+      resources:
+        requests: { cpu: 50m, memory: 32Mi }
+        limits:   { cpu: 100m, memory: 64Mi }
+
+  volumes:
+    - name: shared-vol
+      emptyDir: {}           # tipo default: disco del nodo
+      # emptyDir:
+      #   medium: Memory     # tmpfs (RAM) — più veloce, conta nel memory limit
+      #   sizeLimit: 100Mi   # opzionale: limite dimensione

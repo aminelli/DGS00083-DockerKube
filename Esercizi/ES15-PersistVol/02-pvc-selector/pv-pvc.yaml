@@ -1,0 +1,121 @@
+# Scenario 02 — PVC con labelSelector
+# Un PVC può scegliere un PV SPECIFICO tramite:
+#   a) spec.volumeName: "pv-name"           → binding diretto per nome
+#   b) spec.selector.matchLabels: {...}     → binding per label
+#
+# Utile quando si vuole garantire che un workload usi un PV specifico
+# (es. SSD di alta qualità, PV con dati già presenti, replica geografica).
+---
+# PV A — etichettato come "gold" e "zone-a"
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: selector-pv-gold
+  labels:
+    tier: gold
+    zone: zone-a
+    type: fast-ssd
+spec:
+  storageClassName: labeled-storage
+  capacity:
+    storage: 200Mi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /tmp/k8s-pv-gold
+    type: DirectoryOrCreate
+---
+# PV B — etichettato come "silver" e "zone-b"
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: selector-pv-silver
+  labels:
+    tier: silver
+    zone: zone-b
+    type: standard-hdd
+spec:
+  storageClassName: labeled-storage
+  capacity:
+    storage: 200Mi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /tmp/k8s-pv-silver
+    type: DirectoryOrCreate
+---
+# PVC che seleziona SOLO il PV gold (tier=gold, zone=zone-a)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: selector-pvc-gold
+  namespace: default
+  labels:
+    scenario: pv-selector
+spec:
+  storageClassName: labeled-storage
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+  # Seleziona solo PV con ENTRAMBE le label
+  selector:
+    matchLabels:
+      tier: gold
+      zone: zone-a
+---
+# PVC che seleziona SOLO il PV silver
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: selector-pvc-silver
+  namespace: default
+  labels:
+    scenario: pv-selector
+spec:
+  storageClassName: labeled-storage
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+  selector:
+    matchLabels:
+      tier: silver
+---
+# PVC con binding diretto per nome (più esplicito del selector)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: named-pv
+  labels:
+    scenario: pv-selector
+spec:
+  storageClassName: named-storage
+  capacity:
+    storage: 50Mi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /tmp/k8s-pv-named
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: named-pvc
+  namespace: default
+  labels:
+    scenario: pv-selector
+spec:
+  storageClassName: named-storage
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Mi
+  volumeName: named-pv              # binding diretto per nome del PV

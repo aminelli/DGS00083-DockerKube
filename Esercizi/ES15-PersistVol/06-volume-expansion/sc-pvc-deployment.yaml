@@ -1,0 +1,88 @@
+# Scenario 06 — Volume Expansion
+# Dimostra come espandere un PVC esistente (senza ricrearlo).
+# Requisiti:
+#   - La StorageClass deve avere allowVolumeExpansion: true
+#   - Il filesystem deve supportare l'espansione online (ext4, xfs sì; btrfs limitato)
+#   - Il PVC deve essere Bound
+#
+# Nota: su Kind con hostPath il resize è "offline" (non richiede unmount,
+# ma il filesystem locale non viene effettivamente ridimensionato —
+# la capacità riportata nel PV aumenta ma lo spazio fisico è illimitato
+# con hostPath). In produzione (cloud PD, EBS, ecc.) funziona pienamente.
+---
+# StorageClass con allowVolumeExpansion: true
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: expandable-storage
+provisioner: rancher.io/local-path
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true           # ← CHIAVE: permette il resize del PVC
+---
+# PVC inizialmente piccolo
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: expandable-pvc
+  namespace: default
+  labels:
+    scenario: pv-expansion
+spec:
+  storageClassName: expandable-storage
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Mi              # dimensione iniziale: 50Mi
+---
+# Deployment che usa il PVC
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: expansion-app
+  namespace: default
+  labels:
+    app: expansion-app
+    scenario: pv-expansion
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: expansion-app
+  template:
+    metadata:
+      labels:
+        app: expansion-app
+        scenario: pv-expansion
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "=== Volume Expansion Demo ==="
+              echo "Dimensione volume al mount:"
+              df -h /data
+              echo ""
+              echo "Scrivo dati..."
+              dd if=/dev/urandom of=/data/fill.bin bs=1M count=10 2>&1
+              echo ""
+              echo "Uso disco dopo scrittura:"
+              df -h /data
+              echo ""
+              echo "In sleep — espandi il PVC con:"
+              echo "  kubectl patch pvc expandable-pvc -p '{\"spec\":{\"resources\":{\"requests\":{\"storage\":\"200Mi\"}}}}'"
+              sleep 3600
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits:   { cpu: 200m, memory: 128Mi }
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: expandable-pvc

@@ -1,0 +1,176 @@
+# Scenario 06 — Pattern realistico: Log Collector (stile Fluentd/Filebeat)
+#
+# Pattern usato da tutti i log collector distribuiti:
+#   - Gira su ogni nodo come DaemonSet
+#   - Monta /var/log/containers del nodo (log di tutti i container)
+#   - Monta /var/lib/docker/containers o /run/containerd per i metadata
+#   - Legge in coda (tail -f) e "spedisce" i log a un backend
+#
+# In questo lab simuliamo Filebeat/Fluentd con busybox:
+#   - tail -f i file di log del nodo
+#   - aggiunga metadati (nome nodo, timestamp)
+#   - scrive in un file aggregato (in produzione: Elasticsearch, Loki, Splunk)
+---
+# ConfigMap con la "configurazione" del collector
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: log-collector-config
+  namespace: default
+  labels:
+    scenario: ds-log-collector
+data:
+  collect.sh: |
+    #!/bin/sh
+    echo "=== Log Collector avviato su nodo: $NODE_NAME ==="
+    echo "Raccogliendo log da: /host/var/log/pods/"
+    echo ""
+
+    OUTPUT=/collector-data/collected.log
+    mkdir -p /collector-data
+
+    # Header nel file di output
+    echo "--- Log Collector START: $(date -u '+%Y-%m-%dT%H:%M:%SZ') ---" >> $OUTPUT
+    echo "Node: $NODE_NAME" >> $OUTPUT
+    echo "" >> $OUTPUT
+
+    # Elenca i namespace/pod/container dal path dei log
+    echo "Pod con log sul nodo $NODE_NAME:"
+    ls /host/var/log/pods/ 2>/dev/null | while read pod_dir; do
+      echo "  $pod_dir"
+      # Legge le ultime 3 righe da ogni file di log
+      find /host/var/log/pods/$pod_dir -name "*.log" 2>/dev/null | \
+        head -3 | while read logfile; do
+          NS=$(echo $pod_dir | cut -d_ -f1)
+          POD=$(echo $pod_dir | cut -d_ -f2)
+          echo "[${NODE_NAME}][${NS}][${POD}] $(tail -1 $logfile 2>/dev/null)" >> $OUTPUT
+        done
+    done
+
+    echo ""
+    echo "File di log trovati:"
+    find /host/var/log/pods -name "*.log" 2>/dev/null | wc -l
+    echo ""
+    echo "Sample output (prime 10 righe):"
+    head -10 $OUTPUT 2>/dev/null
+
+    # Continua a monitorare (in produzione: inotify/tail -F)
+    echo ""
+    echo "In watch... (ogni 60s mostra stats)"
+    while true; do
+      sleep 60
+      COUNT=$(find /host/var/log/pods -name "*.log" 2>/dev/null | wc -l)
+      echo "$(date -u '+%H:%M:%S') [$NODE_NAME] log files: $COUNT"
+    done
+
+  # Configurazione simulata (in prod: fluentd.conf, filebeat.yml, fluent-bit.conf)
+  agent.conf: |
+    [INPUT]
+      Name  tail
+      Path  /host/var/log/pods/*/*/*/*.log
+      Tag   kube.*
+
+    [FILTER]
+      Name  kubernetes
+      Match kube.*
+
+    [OUTPUT]
+      Name  http
+      Match *
+      Host  log-aggregator.logging.svc.cluster.local
+      Port  9200
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: log-collector
+  namespace: default
+  labels:
+    app: log-collector
+    scenario: ds-log-collector
+spec:
+  selector:
+    matchLabels:
+      app: log-collector
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+
+  template:
+    metadata:
+      labels:
+        app: log-collector
+        scenario: ds-log-collector
+    spec:
+      terminationGracePeriodSeconds: 30    # tempo per flush buffer prima di uscire
+
+      # Il collector NON deve andare in eviction anche sotto pressione di risorse
+      priorityClassName: system-node-critical   # commenta se non disponibile in Kind
+
+      tolerations:
+        # I log collector devono girare su TUTTI i nodi, anche problematici
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 300           # tolera nodi not-ready per 5 min
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 300
+
+      serviceAccountName: default
+
+      containers:
+        - name: collector
+          image: busybox:1.36
+          command: ["sh", "/config/collect.sh"]
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            # Log dei pod sul nodo (path standard containerd)
+            - name: pod-logs
+              mountPath: /host/var/log/pods
+              readOnly: true
+            # Log di sistema del nodo
+            - name: sys-logs
+              mountPath: /host/var/log/syslog
+              readOnly: true
+            # Directory dove il collector scrive l'output aggregato
+            - name: collector-data
+              mountPath: /collector-data
+            # Configurazione del collector
+            - name: config
+              mountPath: /config
+          resources:
+            requests: { cpu: 50m,  memory: 64Mi  }
+            limits:   { cpu: 200m, memory: 256Mi }
+
+      volumes:
+        - name: pod-logs
+          hostPath:
+            path: /var/log/pods
+            type: DirectoryOrCreate
+        - name: sys-logs
+          hostPath:
+            path: /var/log
+            type: Directory
+        - name: collector-data
+          hostPath:
+            path: /tmp/k8s-log-collector   # directory sul nodo per output aggregato
+            type: DirectoryOrCreate
+        - name: config
+          configMap:
+            name: log-collector-config
+            defaultMode: 0755

@@ -1,0 +1,107 @@
+# Scenario 03 — History limits
+# Due CronJob che dimostrano il comportamento di
+# successfulJobsHistoryLimit e failedJobsHistoryLimit.
+# Il primo conserva molti job nella cronologia (utile per audit).
+# Il secondo li elimina quasi subito (utile per ridurre il rumore).
+---
+# 03a — Cronologia estesa: mantieni gli ultimi 10 job completati
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: history-long
+  namespace: corso
+  labels:
+    scenario: cronjob-history
+spec:
+  schedule: "* * * * *"
+  successfulJobsHistoryLimit: 10   # conserva gli ultimi 10 successi
+  failedJobsHistoryLimit:     5    # conserva gli ultimi 5 fallimenti
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 3600   # rimozione solo dopo 1h dal completamento
+      template:
+        metadata:
+          labels:
+            app: history-long
+            scenario: cronjob-history
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: task
+              image: busybox:1.36
+              command: ["sh", "-c"]
+              args:
+                - |
+                  echo "[HISTORY-LONG] Completato alle $(date -u '+%H:%M:%S')"
+              resources:
+                requests: { cpu: 50m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 64Mi }
+---
+# 03b — Cronologia minima: tieni solo l'ultimo job
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: history-short
+  namespace: corso
+  labels:
+    scenario: cronjob-history
+spec:
+  schedule: "* * * * *"
+  successfulJobsHistoryLimit: 1    # tieni solo l'ultimo successo
+  failedJobsHistoryLimit:     1    # tieni solo l'ultimo fallimento
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 60    # rimozione dopo 60s dal completamento
+      template:
+        metadata:
+          labels:
+            app: history-short
+            scenario: cronjob-history
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: task
+              image: busybox:1.36
+              command: ["sh", "-c"]
+              args:
+                - |
+                  echo "[HISTORY-SHORT] Completato alle $(date -u '+%H:%M:%S')"
+              resources:
+                requests: { cpu: 50m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 64Mi }
+---
+# 03c — Nessuna cronologia: i job vengono eliminati subito dopo il completamento
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: history-none
+  namespace: corso
+  labels:
+    scenario: cronjob-history
+spec:
+  schedule: "* * * * *"
+  successfulJobsHistoryLimit: 0    # nessun job completato viene conservato
+  failedJobsHistoryLimit:     0    # nessun job fallito viene conservato
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 10  # rimozione rapida
+      template:
+        metadata:
+          labels:
+            app: history-none
+            scenario: cronjob-history
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: task
+              image: busybox:1.36
+              command: ["sh", "-c"]
+              args:
+                - |
+                  echo "[HISTORY-NONE] Completato alle $(date -u '+%H:%M:%S')"
+              resources:
+                requests: { cpu: 50m, memory: 32Mi }
+                limits:   { cpu: 100m, memory: 64Mi }

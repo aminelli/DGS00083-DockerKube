@@ -1,0 +1,41 @@
+# Pod di verifica: rilegge i dati scritti da pvc-writer
+# (da applicare DOPO che pvc-writer è terminato)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pvc-reader
+  namespace: default
+  labels:
+    app: pvc-reader
+    scenario: volume-pvc
+spec:
+  restartPolicy: Never
+  containers:
+    - name: reader
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "=== Rilettura dati persistenti dal PVC ==="
+          echo ""
+          echo "==> Contenuto /data/ (scritto da pvc-writer):"
+          ls -la /data/
+          echo ""
+          echo "==> session.log:"
+          cat /data/log/session.log 2>/dev/null || echo "(non trovato)"
+          echo ""
+          echo "==> records.csv:"
+          cat /data/records.csv 2>/dev/null || echo "(non trovato)"
+          echo ""
+          echo "DIMOSTRATO: i dati sopravvivono alla terminazione del pod scrittore."
+      volumeMounts:
+        - name: data-vol
+          mountPath: /data
+      resources:
+        requests: { cpu: 50m, memory: 32Mi }
+        limits:   { cpu: 100m, memory: 64Mi }
+
+  volumes:
+    - name: data-vol
+      persistentVolumeClaim:
+        claimName: demo-pvc

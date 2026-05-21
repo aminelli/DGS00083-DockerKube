@@ -1,0 +1,87 @@
+# Scenario 04 — PersistentVolume + PersistentVolumeClaim
+# Provisioning statico con hostPath (adatto a Kind/single-node).
+# In produzione si usa dynamic provisioning con StorageClass.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: demo-pv
+  labels:
+    type: local
+    scenario: volume-pvc
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 256Mi
+  accessModes:
+    - ReadWriteOnce          # RWO: un solo nodo alla volta
+  persistenceReclaimPolicy: Retain  # non cancella i dati alla release del PVC
+  hostPath:
+    path: /tmp/k8s-pv-demo         # percorso sul nodo Kind
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: demo-pvc
+  namespace: default
+  labels:
+    scenario: volume-pvc
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi           # richiede 100Mi del PV da 256Mi
+---
+# Pod che usa il PVC
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pvc-writer
+  namespace: default
+  labels:
+    app: pvc-writer
+    scenario: volume-pvc
+spec:
+  restartPolicy: Never
+  containers:
+    - name: writer
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "=== PersistentVolumeClaim: /data montato su PV ==="
+          echo ""
+          echo "==> Scrivo dati persistenti..."
+          mkdir -p /data/log
+          echo "Sessione avviata il $(date)" >> /data/log/session.log
+          echo "Pod: $HOSTNAME"              >> /data/log/session.log
+          for i in $(seq 1 5); do
+            echo "Record $i — $(date)" >> /data/records.csv
+          done
+          echo ""
+          echo "==> Contenuto /data/:"
+          ls -la /data/
+          echo ""
+          echo "==> /data/log/session.log:"
+          cat /data/log/session.log
+          echo ""
+          echo "==> /data/records.csv:"
+          cat /data/records.csv
+          echo ""
+          echo "==> Spazio disponibile sul volume:"
+          df -h /data
+          echo ""
+          echo "Dati scritti. Il pod termina, ma i dati sul PV restano."
+      volumeMounts:
+        - name: data-vol
+          mountPath: /data
+      resources:
+        requests: { cpu: 50m, memory: 32Mi }
+        limits:   { cpu: 100m, memory: 64Mi }
+
+  volumes:
+    - name: data-vol
+      persistentVolumeClaim:
+        claimName: demo-pvc   # riferimento al PVC
