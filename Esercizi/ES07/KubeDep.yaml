@@ -1,0 +1,8 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spring-app
+  namespace: corso
+  labels:
+    app: spring-app
+    version: "2.0"

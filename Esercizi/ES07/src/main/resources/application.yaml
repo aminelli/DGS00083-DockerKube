@@ -1,3 +1,18 @@
 spring:
   application:
     name: demo
+
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+      base-path: /actuator
+
+  endpoint:
+    health:
+      show-details: always
+      probe:
+        enabled: true
+        
