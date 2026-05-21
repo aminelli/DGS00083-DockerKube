@@ -27,7 +27,7 @@ spec:
     spec:
       containers:
         - name: spring-app
-          image: web_app_spring:v2.0
+          image: aminelli/web_app_spring:v2.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
