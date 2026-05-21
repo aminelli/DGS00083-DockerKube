@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: envfrom-secret-demo
+  namespace: default
+  labels:
+    app: envfrom-secret-demo
+    scenario: secret-envfrom
+spec:
+  restartPolicy: Never
+  containers:
+    - name: demo
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "=== Chiavi importate via envFrom.secretRef (nomi, non valori!) ==="
+          env | grep -E "^(DB_HOST|DB_PORT|DB_USER|REDIS_|JWT_|API_KEY|SMTP_USER|ENCRYPTION_KEY)" \
+            | sed 's/=.*/=<HIDDEN>/' | sort
+          echo ""
+          echo "=== Stesse chiavi con prefisso SEC_ ==="
+          env | grep "^SEC_" | sed 's/=.*/=<HIDDEN>/' | sort
+          echo ""
+          echo "=== Totale env var nel container ==="
+          env | wc -l
+          echo "Pod in sleep..."
+          sleep 3600
+      envFrom:
+        # Importa tutte le chiavi del Secret come env var
+        - secretRef:
+            name: app-secrets-envfrom
+        # Stesse chiavi con prefisso, per isolare il namespace
+        - secretRef:
+            name: app-secrets-envfrom
+            prefix: "SEC_"
+      resources:
+        requests:
+          cpu: 50m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi

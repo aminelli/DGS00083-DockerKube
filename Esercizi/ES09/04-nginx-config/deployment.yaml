@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-custom
+  namespace: default
+  labels:
+    app: nginx-custom
+    scenario: cm-nginx-config
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-custom
+  template:
+    metadata:
+      labels:
+        app: nginx-custom
+        scenario: cm-nginx-config
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            # Mount con subPath: sovrascrive un singolo file, non l'intera directory.
+            # ATTENZIONE: con subPath il file NON si aggiorna automaticamente
+            # se il ConfigMap cambia (serve riavvio del pod).
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+            - name: nginx-conf
+              mountPath: /usr/share/nginx/html/index.html
+              subPath: index.html
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: nginx-custom-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-custom-svc
+  namespace: default
+  labels:
+    scenario: cm-nginx-config
+spec:
+  selector:
+    app: nginx-custom
+  ports:
+    - port: 80
+      targetPort: 80

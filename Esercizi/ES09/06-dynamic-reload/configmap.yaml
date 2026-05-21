@@ -1,0 +1,53 @@
+# ─────────────────────────────────────────────────────────────
+# SCENARIO 06 — Dynamic reload: ConfigMap aggiornato a runtime
+# ─────────────────────────────────────────────────────────────
+# Quando un ConfigMap è montato come Volume (SENZA subPath):
+#   - Kubernetes aggiorna i file nel container automaticamente
+#   - Il file viene aggiornato entro il kubelet sync period (~60s default)
+#   - Kubernetes usa symlink interni per il cambio atomico dei file
+#
+# nginx legge i file statici dal disco ad ogni richiesta
+# → dopo che kubelet ha aggiornato il file, il nuovo contenuto
+#   è servito senza riavviare il pod.
+#
+# DIFFERENZA con subPath:
+#   - Con subPath: file NON aggiornato automaticamente
+#   - Senza subPath (directory mount): file aggiornato automaticamente
+# ─────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: webpage-content
+  namespace: default
+  labels:
+    scenario: cm-dynamic-reload
+    version: "v1"
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head><title>Dynamic Reload - v1</title></head>
+    <body style="font-family:sans-serif;padding:2rem;background:#fff9c4">
+      <h1>&#128257; ConfigMap Dynamic Reload</h1>
+      <p><strong>Versione:</strong> <code>v1</code> — originale</p>
+      <p>Questa pagina è servita da nginx, il cui contenuto HTML
+         proviene da un ConfigMap montato come volume.</p>
+      <p>Aggiorna il ConfigMap per vedere questo testo cambiare
+         senza riavviare il pod.</p>
+      <p style="color:#888;font-size:.8rem">Generato: 2026-05-21</p>
+    </body>
+    </html>
+
+  config.json: |
+    {
+      "version": "1",
+      "feature_flags": {
+        "banner": true,
+        "dark_mode": false,
+        "beta_features": false
+      },
+      "ui": {
+        "theme": "light",
+        "language": "it"
+      }
+    }

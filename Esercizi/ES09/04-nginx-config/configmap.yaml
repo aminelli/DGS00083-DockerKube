@@ -1,0 +1,70 @@
+# ─────────────────────────────────────────────────────────────
+# SCENARIO 04 — nginx con configurazione da ConfigMap
+# ─────────────────────────────────────────────────────────────
+# Il ConfigMap contiene due chiavi:
+#   default.conf  → nginx virtual host config (con security headers)
+#   index.html    → pagina servita da nginx
+#
+# Entrambe vengono montate con subPath per sovrascrivere
+# solo i file specifici senza toccare il resto di /etc/nginx.
+#
+# NOTA: con subPath il file NON si aggiorna automaticamente
+# se il ConfigMap cambia (vedi scenario 06 per il dynamic reload).
+# ─────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-custom-config
+  namespace: default
+  labels:
+    scenario: cm-nginx-config
+data:
+  default.conf: |
+    server {
+        listen 80;
+        server_name localhost;
+
+        # Security headers
+        add_header X-Frame-Options        "SAMEORIGIN"   always;
+        add_header X-XSS-Protection       "1; mode=block" always;
+        add_header X-Content-Type-Options "nosniff"       always;
+        add_header X-Powered-By           "ConfigMap-Demo" always;
+        add_header Cache-Control          "no-store, no-cache, must-revalidate" always;
+
+        location / {
+            root  /usr/share/nginx/html;
+            index index.html;
+        }
+
+        # Endpoint health check (non serve file, risponde inline)
+        location /health {
+            add_header Content-Type text/plain;
+            return 200 "healthy\n";
+        }
+
+        # Endpoint info: mostra la sorgente della config
+        location /info {
+            add_header Content-Type text/plain;
+            return 200 "nginx configurato via ConfigMap 'nginx-custom-config'\n";
+        }
+    }
+
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head><title>nginx + ConfigMap</title></head>
+    <body style="font-family:sans-serif;padding:2rem;background:#e8eaf6">
+      <h1>&#128196; nginx con ConfigMap</h1>
+      <p><strong>Scenario:</strong> Configurazione nginx da ConfigMap</p>
+      <p>Questo server usa <code>default.conf</code> e <code>index.html</code>
+         montati via <code>subPath</code> da un ConfigMap.</p>
+      <ul>
+        <li><a href="/health">/health</a> → risposta inline da nginx.conf</li>
+        <li><a href="/info">/info</a> → info sulla configurazione</li>
+      </ul>
+      <p style="color:#666;font-size:.9rem">
+        Verifica gli header HTTP di sicurezza con:
+        <code>curl -I http://localhost:8080/</code>
+      </p>
+    </body>
+    </html>

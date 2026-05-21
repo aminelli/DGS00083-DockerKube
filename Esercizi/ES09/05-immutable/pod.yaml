@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: immutable-reader
+  namespace: default
+  labels:
+    app: immutable-reader
+    scenario: cm-immutable
+spec:
+  restartPolicy: Never
+  containers:
+    - name: reader
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "=== Valori letti dal ConfigMap immutabile 'release-config-v1' ==="
+          echo "  API_ENDPOINT        = $API_ENDPOINT"
+          echo "  API_VERSION         = $API_VERSION"
+          echo "  RATE_LIMIT_PER_MIN  = $RATE_LIMIT_PER_MIN"
+          echo "  TIMEOUT_MS          = $TIMEOUT_MS"
+          echo "  REGION              = $REGION"
+          echo "  FEATURE_FLAGS       = $FEATURE_FLAGS"
+          echo "  BUILD_VERSION       = $BUILD_VERSION"
+          echo "  COMMIT_SHA          = $COMMIT_SHA"
+          echo ""
+          echo "Questo ConfigMap ha 'immutable: true'."
+          echo "Qualsiasi tentativo di modifica sarà rifiutato dall'API server."
+          sleep 3600
+      envFrom:
+        - configMapRef:
+            name: release-config-v1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi

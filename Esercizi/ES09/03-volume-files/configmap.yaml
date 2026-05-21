@@ -1,0 +1,60 @@
+# ─────────────────────────────────────────────────────────────
+# SCENARIO 03 — volume mount: ogni chiave diventa un file
+# ─────────────────────────────────────────────────────────────
+# Quando un ConfigMap viene montato come Volume:
+#   - Ogni chiave diventa un FILE nella directory di mount
+#   - Il nome del file = nome della chiave
+#   - Il contenuto del file = valore della chiave
+#
+# Struttura risultante nel container:
+#   /etc/config/
+#     app.properties        ← chiave "app.properties"
+#     database.properties   ← chiave "database.properties"
+#     logging.yaml          ← chiave "logging.yaml"
+# ─────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config-files
+  namespace: default
+  labels:
+    scenario: cm-volume-files
+data:
+  # File 1: configurazione del server applicativo
+  app.properties: |
+    server.port=8080
+    server.context-path=/app
+    server.max-connections=200
+    server.timeout=30s
+
+    spring.application.name=demo-service
+    spring.profiles.active=development
+
+    metrics.enabled=true
+    metrics.endpoint=/metrics
+
+  # File 2: configurazione database
+  database.properties: |
+    db.host=postgres.default.svc.cluster.local
+    db.port=5432
+    db.name=myapp_db
+    db.user=app_user
+
+    db.pool.size=10
+    db.pool.min-idle=2
+    db.pool.timeout-ms=5000
+    db.pool.max-lifetime-ms=1800000
+
+  # File 3: file di configurazione in formato YAML
+  logging.yaml: |
+    logging:
+      level: info
+      format: json
+      outputs:
+        - type: stdout
+          enabled: true
+        - type: file
+          enabled: false
+          path: /var/log/app/app.log
+          max-size: 100MB
+          max-backups: 5

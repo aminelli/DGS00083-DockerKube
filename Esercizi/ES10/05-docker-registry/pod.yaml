@@ -1,0 +1,38 @@
+# Pod che usa imagePullSecrets per tirare da un registry privato.
+# In questo demo l'immagine è pubblica (nginx) ma imagePullSecrets
+# è configurato per mostrare la struttura.
+# Un pod che tenta di tirare da registry.example.com fallirebbe,
+# ma questo dimostra come si configura il meccanismo.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: registry-pull-demo
+  namespace: default
+  labels:
+    app: registry-pull-demo
+    scenario: secret-registry
+spec:
+  restartPolicy: Never
+  # imagePullSecrets: lista di Secret di tipo dockerconfigjson
+  # Kubernetes usa queste credenziali durante il pull delle immagini.
+  imagePullSecrets:
+    - name: registry-credentials
+  containers:
+    - name: app
+      # Usa una immagine pubblica per non fallire il pull in questo demo.
+      # In produzione questa sarebbe registry.example.com/myapp:1.0.0
+      image: nginx:1.25-alpine
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "=== Pod avviato con imagePullSecrets ==="
+          echo "    Il Secret 'registry-credentials' era disponibile"
+          echo "    per autenticarsi con il registry privato."
+          sleep 300
+      resources:
+        requests:
+          cpu: 50m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi

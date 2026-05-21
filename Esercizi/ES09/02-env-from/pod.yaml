@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: env-from-demo
+  namespace: default
+  labels:
+    app: env-from-demo
+    scenario: cm-env-from
+spec:
+  restartPolicy: Never
+  containers:
+    - name: demo
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "=== Env var importate con envFrom (nessun prefisso) ==="
+          env | grep -E "^(APP_NAME|APP_VERSION|APP_PORT|ENVIRONMENT|LOG_|DATABASE_|REDIS_|CACHE_|JWT_|CORS_)" | sort
+          echo ""
+          echo "=== Le stesse chiavi con prefisso CFG_ ==="
+          env | grep "^CFG_" | sort
+          echo ""
+          echo "=== Totale variabili nel container ==="
+          env | wc -l
+          echo "Pod in sleep, usa 'kubectl exec' per altri test..."
+          sleep 3600
+      envFrom:
+        # Importa TUTTE le chiavi come env var (senza prefisso)
+        - configMapRef:
+            name: app-config-envfrom
+        # Importa di nuovo con prefisso per isolare namespace di naming
+        - configMapRef:
+            name: app-config-envfrom
+            prefix: "CFG_"    # → CFG_APP_NAME, CFG_LOG_LEVEL, ...            
+      resources:
+        requests:
+          cpu: 50m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi

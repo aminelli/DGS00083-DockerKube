@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: volume-files-app
+  namespace: default
+  labels:
+    app: volume-files-app
+    scenario: cm-volume-files
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: volume-files-app
+  template:
+    metadata:
+      labels:
+        app: volume-files-app
+        scenario: cm-volume-files
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "=== File montati da ConfigMap in /etc/config/ ==="
+              ls -la /etc/config/
+              echo ""
+              echo "=== app.properties ==="
+              cat /etc/config/app.properties
+              echo ""
+              echo "=== database.properties ==="
+              cat /etc/config/database.properties
+              echo ""
+              echo "=== logging.yaml ==="
+              cat /etc/config/logging.yaml
+              echo ""
+              echo "=== Struttura interna (symlink kubelet) ==="
+              ls -la /etc/config/..data/ 2>/dev/null || echo "(directory ..data non accessibile direttamente)"
+              echo "Container in sleep, usa 'kubectl exec' per altri test..."
+              sleep 3600
+          volumeMounts:
+            - name: config-vol
+              mountPath: /etc/config     # ogni chiave → un file in questa directory
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+      volumes:
+        - name: config-vol
+          configMap:
+            name: app-config-files
+            # OPZIONE: selezionare solo alcune chiavi e rinominarle
+            # items:
+            #   - key: app.properties
+            #     path: application.properties   # nome file nel container
+            #   - key: database.properties
+            #     path: db/connection.properties  # con sotto-directory

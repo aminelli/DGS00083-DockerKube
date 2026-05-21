@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webpage-server
+  namespace: default
+  labels:
+    app: webpage-server
+    scenario: cm-dynamic-reload
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webpage-server
+  template:
+    metadata:
+      labels:
+        app: webpage-server
+        scenario: cm-dynamic-reload
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            # Mount SENZA subPath: monta l'intera directory del ConfigMap.
+            # Tutti i file vengono aggiornati automaticamente quando il
+            # ConfigMap cambia (kubelet sync, entro ~60s di default).
+            # La directory /usr/share/nginx/html viene SOSTITUITA
+            # con i file del ConfigMap.
+            - name: web-content
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        - name: web-content
+          configMap:
+            name: webpage-content
+            # defaultMode: 0644  # permessi dei file (default: 0644)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webpage-svc
+  namespace: default
+  labels:
+    scenario: cm-dynamic-reload
+spec:
+  selector:
+    app: webpage-server
+  ports:
+    - port: 80
+      targetPort: 80

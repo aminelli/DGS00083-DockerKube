@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: opaque-secret-demo
+  namespace: default
+  labels:
+    app: opaque-secret-demo
+    scenario: secret-opaque
+spec:
+  restartPolicy: Never
+  containers:
+    - name: demo
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "=== Secret iniettati come env var (valueFrom.secretKeyRef) ==="
+          echo "  DB_USER             = $DB_USER"
+          echo "  DB_HOST             = $DB_HOST"
+          echo "  DB_PORT             = $DB_PORT"
+          echo ""
+          echo "=== Password: NON stampare mai in log reali! ==="
+          echo "  DB_PASSWORD length  = ${#DB_PASSWORD} caratteri"
+          echo "  CONNECTION_STR set  = $([ -n "$CONNECTION_STRING" ] && echo SI || echo NO)"
+          echo ""
+          echo "=== Verifica che il valore sia in chiaro nel container ==="
+          echo "  (il base64 viene decodificato da Kubernetes prima dell'iniezione)"
+          echo "  DB_USER = $DB_USER"
+          echo ""
+          echo "Pod in sleep per test interattivi..."
+          sleep 3600
+      env:
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: password
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: db-host
+        - name: DB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: db-port
+        - name: CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: connection-string
+        # Chiave opzionale: non fallisce se manca
+        - name: DB_REPLICA_HOST
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: replica-host
+              optional: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi

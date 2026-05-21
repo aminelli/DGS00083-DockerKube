@@ -1,0 +1,59 @@
+# Pod che usa il ServiceAccount pod-reader-sa.
+# Dimostra:
+#  - Token proiettato automaticamente in /var/run/secrets/kubernetes.io/serviceaccount/
+#  - Chiamata all'API Kubernetes usando il token (lista pods)
+#  - Tentativo di operazione non autorizzata (crea deployment → 403 Forbidden)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sa-token-demo
+  namespace: default
+  labels:
+    app: sa-token-demo
+    scenario: secret-serviceaccount
+spec:
+  restartPolicy: Never
+  serviceAccountName: pod-reader-sa     # usa il nostro SA con RBAC limitato
+  containers:
+    - name: demo
+      image: curlimages/curl:8.7.1
+      command: ["sh", "-c"]
+      args:
+        - |
+          echo "=== Token e CA montati automaticamente nel pod ==="
+          ls -la /var/run/secrets/kubernetes.io/serviceaccount/
+          echo ""
+          echo "=== Namespace corrente ==="
+          cat /var/run/secrets/kubernetes.io/serviceaccount/namespace
+          echo ""
+
+          TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+          CACERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          APISERVER=https://kubernetes.default.svc
+
+          echo ""
+          echo "=== Lista Pod nel namespace default (permesso: CONSENTITO) ==="
+          curl -s --cacert $CACERT \
+               -H "Authorization: Bearer $TOKEN" \
+               "$APISERVER/api/v1/namespaces/default/pods" \
+            | grep '"name"' | head -10
+
+          echo ""
+          echo "=== Lista Deployment (permesso: NON CONSENTITO → 403) ==="
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --cacert $CACERT \
+               -H "Authorization: Bearer $TOKEN" \
+               "$APISERVER/apis/apps/v1/namespaces/default/deployments")
+          echo "    HTTP Status: $STATUS (atteso 403 Forbidden)"
+
+          echo ""
+          echo "=== Token JWT (prime 3 parti, non decodificato) ==="
+          echo $TOKEN | cut -d'.' -f1,2 | tr -d '\n' | cut -c1-80
+          echo "..."
+          sleep 3600
+      resources:
+        requests:
+          cpu: 50m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi

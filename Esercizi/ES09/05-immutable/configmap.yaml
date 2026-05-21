@@ -1,0 +1,36 @@
+# ─────────────────────────────────────────────────────────────
+# SCENARIO 05 — ConfigMap immutabile (immutable: true)
+# ─────────────────────────────────────────────────────────────
+# Un ConfigMap immutabile:
+#   - NON può essere modificato dopo la creazione
+#   - NON può essere reso di nuovo mutabile
+#   - Può SOLO essere eliminato e ricreato
+#
+# VANTAGGI:
+#   - Previene modifiche accidentali alla config di produzione
+#   - Il kubelet non deve fare watch del ConfigMap → riduce carico API server
+#   - Ideale per configurazioni di release che non devono cambiare
+#
+# PATTERN consigliato: versionare nel nome
+#   release-config-v1  →  release-config-v2  (nuovo CM)
+#   poi aggiornare i Deployment per puntare al nuovo nome
+# ─────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: release-config-v1
+  namespace: default
+  labels:
+    scenario: cm-immutable
+    version: "v1"
+    release: "2026-05-21"
+immutable: true        # ← rende il ConfigMap immutabile
+data:
+  API_ENDPOINT: "https://api.production.example.com/v2"
+  API_VERSION: "v2"
+  RATE_LIMIT_PER_MIN: "1000"
+  TIMEOUT_MS: "5000"
+  REGION: "eu-west-1"
+  FEATURE_FLAGS: "dark-mode=true,new-checkout=false,analytics=true"
+  BUILD_VERSION: "1.3.0-rc.2"
+  COMMIT_SHA: "a1b2c3d4e5f6"

@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secret-files-app
+  namespace: default
+  labels:
+    app: secret-files-app
+    scenario: secret-volume
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: secret-files-app
+  template:
+    metadata:
+      labels:
+        app: secret-files-app
+        scenario: secret-volume
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "=== File montati da Secret in /etc/secrets/ ==="
+              ls -la /etc/secrets/
+              echo ""
+              echo "=== Permessi file (defaultMode 0400 = rw solo owner) ==="
+              stat /etc/secrets/api-key.txt
+              echo ""
+              echo "=== Contenuto api-key.txt ==="
+              cat /etc/secrets/api-key.txt
+              echo ""
+              echo "=== Sezione [database] di credentials.conf ==="
+              grep -A 5 '\[database\]' /etc/secrets/credentials.conf
+              echo ""
+              echo "=== .pgpass (file nascosto) ==="
+              cat /etc/secrets/.pgpass
+              echo ""
+              echo "Container in sleep..."
+              sleep 3600
+          volumeMounts:
+            - name: secret-vol
+              mountPath: /etc/secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+      volumes:
+        - name: secret-vol
+          secret:
+            secretName: app-secret-files
+            defaultMode: 0400    # rw solo per il proprietario (root nel container)
+            # items:             # OPZIONE: monta solo alcune chiavi
+            #   - key: api-key.txt
+            #     path: api-key.txt
+            #     mode: 0400

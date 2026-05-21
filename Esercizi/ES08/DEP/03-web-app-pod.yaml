@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web-app
+  namespace: corso
+  labels:
+    app: web-app
+spec:
+  containers:
+  - name: web-app
+    image: bmuschko/web-app:1.0.1
+    # env:
+    # - name: DB_HOST
+    #   value: mysql-service
+    # - name: DB_USER
+    #   value: "root"
+    # - name: DB_PASSWORD
+    #   value: "Password123"
+    envFrom:
+    - configMapRef:
+        name: db-config
+    - secretRef:
+        name: db-secret
+    ports:
+    - containerPort: 3000
+      protocol: TCP
+ 
